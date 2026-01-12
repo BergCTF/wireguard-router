@@ -17,5 +17,6 @@ All sessions are stored in a HashMap. This may be contested in the future to imp
 Todo:
 - Hot-reload config file to manage runtime updates to the backend peers
 - Garbage collect old sessions, either when a peer is removed and also when they haven't seen packets for a while
-
+- Metrics for different packet types
+- Some architecture diagrams
 
