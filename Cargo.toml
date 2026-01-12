@@ -1,0 +1,22 @@
+[package]
+name = "wireguard-router"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.8"
+base64 = "0.22.1"
+blake2 = "0.10.6"
+blake2s_simd = "1.0.3"
+config = "0.15.19"
+hex = "0.4.3"
+hmac = "0.12.1"
+notify = "8.2.0"
+rkyv = { version = "0.8.13", features = ["bytecheck"] }
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6.8", features = ["timeout"] }
+tracing = { version = "0.1.44", features = ["log"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+zerocopy = { version = "0.8.33", features = ["derive", "simd", "std", "zerocopy-derive"] }
