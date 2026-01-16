@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use rkyv::{Archive, Deserialize, Portable};
 use tokio::sync::Mutex;
 use wireguard_router::Peer;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};

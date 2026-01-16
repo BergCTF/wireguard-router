@@ -6,6 +6,7 @@ use notify::Event;
 use rkyv::rancor::Failure;
 use rkyv::{Archive, Deserialize, Portable};
 use tokio::net::UdpSocket;
+use tokio::select;
 use tokio::sync::Mutex;
 use tracing::debug;
 use wireguard_router::utils;
@@ -93,26 +94,20 @@ impl<'a> TryFrom<(&'a [u8], usize)> for WireguardPacket<'a> {
 pub struct Router {
     socket: UdpSocket,
     to_process: Option<(usize, SocketAddr)>,
-    config_rx: Receiver<Result<Event, notify::Error>>,
-    peers: Vec<Peer>,
     /// Identity -> (From, To)
     sessions: Arc<Mutex<HashMap<Identity, (SocketAddr, SocketAddr)>>>,
 }
 
 impl Router {
-    pub fn new(socket: UdpSocket, config_rx: Receiver<Result<Event, notify::Error>>) -> Self {
-        let peers = crate::config::settings().read().unwrap().peers.to_owned();
-        tracing::info!("loaded {} peers", peers.len());
+    pub fn new(socket: UdpSocket) -> Self {
         Router {
             socket,
             to_process: None,
-            config_rx,
-            peers,
             sessions: Default::default(),
         }
     }
 
-    async fn handle_packet(&self, size: usize, peer: SocketAddr, data: &[u8]) {
+    async fn handle_packet(&self, size: usize, peer: SocketAddr, data: &[u8], peers: &[Peer]) {
         if !is_wg_packet(size, &data) {
             return;
         }
@@ -128,7 +123,7 @@ impl Router {
                         Some(session) => {
                             let _ = self.socket.send_to(&data[..size], session.1).await;
                         }
-                        None => match self.peers.iter().find(|p| {
+                        None => match peers.iter().find(|p| {
                             let peer_mac =
                                 utils::mac(p.precomputed_hash_label_mac1.as_slice(), &data[..116]);
                             tracing::trace!(
@@ -184,21 +179,53 @@ impl Router {
         }
     }
 
-    pub async fn run(mut self) -> Result<(), io::Error> {
+    pub async fn run(
+        mut self,
+        config_rx: Receiver<Result<Event, notify::Error>>,
+    ) -> Result<(), io::Error> {
         // TODO:
         // refresh peers based on config
         // then trigger a GC for sessions
+        let mut peers = crate::config::settings().read().unwrap().peers.to_owned();
+        tracing::info!("loaded {} peers", peers.len());
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        tokio::spawn(async move {
+            while let Ok(event) = config_rx.recv() {
+                if tx.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
 
         // lets just use a 70kb buffer
         let mut buf: Vec<u8> = vec![0; 1024 * 70];
 
         loop {
-            if let Some((size, peer)) = self.to_process {
-                self.handle_packet(size, peer, &buf).await;
+            select! {
+                result = self.socket.recv_from(&mut buf) => {
+                    match result {
+                        Ok((size, peer)) => {
+                            self.handle_packet(size, peer, &buf, &peers).await;
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                }
+                Some(event) = rx.recv() => {
+                    match event {
+                        Ok(event) => {
+                            tracing::info!("config changed, reloading peers");
+                            peers = crate::config::settings().read().unwrap().peers.to_owned();
+                        }
+                        Err(e) => {
+                            tracing::error!("config watcher error: {:?}", e);
+                        }
+                    }
+                }
             }
-
-            tracing::trace!("waiting for next packet");
-            self.to_process = Some(self.socket.recv_from(&mut buf).await?);
         }
     }
 }

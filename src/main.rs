@@ -1,14 +1,11 @@
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::env;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use wireguard_router::Peer;
 
 use crate::router::Router;
 
@@ -40,8 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .watch(Path::new("config.toml"), RecursiveMode::NonRecursive)
         .unwrap();
 
-    let router = Router::new(socket, rx);
-    router.run().await?;
+    let router = Router::new(socket);
+    router.run(rx).await?;
 
     Ok(())
 }
